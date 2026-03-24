@@ -21,8 +21,7 @@
         </div>
       </div>
       <div class="header-right">
-        <div class="status-dot" :class="'dot-'+connState"></div>
-        <div class="status-label" id="conn-status">{{ connStateLabel }}</div>
+        <StatusConn :state="connState" />
       </div>
     </header>
 
@@ -33,26 +32,12 @@
     </div>
 
     <div class="main">
-      <div class="sidebar">
-        <div class="sidebar-title">▸ Agent Chat
-          <span v-if="running.length" style="color:var(--accent);font-size:9px;float:right">{{running.length}} running</span>
-        </div>
-        <div class="chat-messages">
-          <div v-for="(m,i) in messages" :key="i" :class="'msg '+m.role">
-            <div class="msg-label">{{m.role==='user'?'you':m.role==='agent'?'cadenza agent':'system'}}</div>
-            <div class="msg-bubble" v-html="m.text.replace(/\n/g,'<br>')"></div>
-          </div>
-        </div>
-        <div class="chat-input-area">
-          <textarea
-            class="chat-input"
-            placeholder="Type your message..."
-            v-model="chatInput"
-            @keydown.enter.exact.prevent="sendMessage"
-          ></textarea>
-          <button class="send-btn" @click="sendMessage">➤</button>
-        </div>
-      </div>
+      <AgentChat
+        :messages="messages"
+        :chatInput="chatInput"
+        @send="val => { chatInput.value = val; sendMessage(); }"
+        @update:chatInput="val => chatInput.value = val"
+      />
       <div class="content-panel">
         <div class="tab-content" v-if="tab==='services'">
           <TabServices
@@ -92,6 +77,8 @@ import TabLogs from '../components/tabs/TabLogs.vue';
 import TabStats from '../components/tabs/TabStats.vue';
 import TabMap from '../components/tabs/TabMap.vue';
 import TabCadenzaDB from '../components/tabs/TabCadenzaDB.vue';
+import StatusConn from '../components/StatusConn.vue';
+import AgentChat from '../components/AgentChat.vue';
 const tabs = [
   { id: 'services', label: 'Services' },
   { id: 'logs', label: 'Logs' },
@@ -126,11 +113,10 @@ const connStateLabel = computed(() => {
 });
 
 function connectLogsSSE() {
-  console.log('Connecting to logs SSE...');
   if (eventSource) eventSource.close();
   connState.value = 'connecting';
-  // Always use full backend URL for SSE in dev
-  const backendUrl = (typeof window !== 'undefined' && window.location.hostname === 'localhost')
+  // Use full backend URL for local dev; fallback to relative for prod
+  const backendUrl = typeof window !== 'undefined' && window.location.hostname === 'localhost'
     ? 'http://localhost:3010/api/logs'
     : '/api/logs';
   eventSource = new EventSource(backendUrl);
