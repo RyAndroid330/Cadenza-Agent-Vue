@@ -1,0 +1,53 @@
+[
+  {
+    "type": "frontend",
+    "name": "todo-frontend",
+    "description": "Todo list frontend built with React",
+    "status": "verified",
+    "groupId": "todo",
+    "createdAt": 1774219489102,
+    "retries": 0,
+    "testResults": {
+      "passed": [
+        "health",
+        "basic"
+      ],
+      "failed": [],
+      "total": 2
+    }
+  },
+  {
+    "type": "backend",
+    "name": "todo-backend",
+    "description": "Todo list backend built with Node.js and Express",
+    "status": "verified",
+    "groupId": "todo",
+    "createdAt": 1774219490111,
+    "retries": 0,
+    "testResults": {
+      "passed": [
+        "health",
+        "basic"
+      ],
+      "failed": [],
+      "total": 2
+    }
+  },
+  {
+    "type": "db",
+    "name": "todo-db",
+    "description": "Todo list database built with MongoDB",
+    "status": "verified",
+    "groupId": "todo",
+    "createdAt": 1774219491115,
+    "retries": 0,
+    "testResults": {
+      "passed": [
+        "health",
+        "basic"
+      ],
+      "failed": [],
+      "total": 2
+    }
+  }
+]
