@@ -1,16 +1,4 @@
 <template>
-  <Head>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Cadenza Agent: Self-expanding LLM system for autonomous service generation and management." />
-    <meta name="theme-color" content="#181c20" />
-    <meta property="og:title" content="Cadenza Agent" />
-    <meta property="og:description" content="Self-expanding LLM system for autonomous service generation and management." />
-    <meta property="og:type" content="website" />
-  </Head>
   <div id="app">
     <header>
       <div class="logo">
@@ -34,7 +22,7 @@
     <div class="main">
       <AgentChat
         :messages="messages"
-        :chatInput="chatInput"
+        :chatInput="chatInput.value"
         @send="val => { chatInput.value = val; sendMessage(); }"
         @update:chatInput="val => chatInput.value = val"
       />
@@ -86,6 +74,24 @@ const tabs = [
   { id: 'map', label: 'Map' },
   { id: 'db', label: 'CadenzaDB' },
 ];
+import { useHead } from '#imports';
+useHead({
+  title: 'Cadenza Agent',
+  meta: [
+    { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+    { name: 'description', content: 'Cadenza Agent: Self-expanding LLM system for autonomous service generation and management.' },
+    { name: 'theme-color', content: '#181c20' },
+    { property: 'og:title', content: 'Cadenza Agent' },
+    { property: 'og:description', content: 'Self-expanding LLM system for autonomous service generation and management.' },
+    { property: 'og:type', content: 'website' }
+  ],
+  link: [
+    { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+    { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap' },
+    { rel: 'stylesheet', href: '/style.css' },
+    { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }
+  ]
+});
 const tab = ref('services');
 const stats = ref([]);
 const graph = ref(null);
