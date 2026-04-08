@@ -1,147 +1,265 @@
-// Cadenza-Agent backend (Express) for Nuxt integration
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const express = require('express');
-const cors = require('cors');
-const { EventEmitter } = require('events');
-const { load, save } = require('./storage');
-// Use unified agent service
-const agent = require('./cadenza/service/agent');
-require('dotenv').config({ path: '../.env' });
+// index.js — Cadenza Agent backend entry point (port 3010)
+import express from 'express';
+import cors from 'cors';
+import { createServer } from 'http';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import { spawn } from 'child_process';
+import 'dotenv/config';
+import { logAgent, logBus, logBuffer } from './logger.js';
 
+export { logAgent };
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = 3010;
+
+// ── Start CadenzaDB child process ──────────────────────────────────────────────
+function startCadenzaDB() {
+  return new Promise((resolve) => {
+    const dbPath = path.join(__dirname, 'cadenza-db.js');
+    const proc = spawn('node', [dbPath], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'] });
+    proc.on('message', (msg) => {
+      if (msg === 'ready') resolve(proc);
+    });
+    proc.on('exit', (code) => {
+      if (code !== 0) console.error(`[CadenzaDB] Exited with code ${code}`);
+    });
+    // Fallback: assume ready after 2s
+    setTimeout(() => resolve(proc), 2000);
+  });
+}
+
+async function waitForDB(retries = 20) {
+  const fetch = (await import('node-fetch')).default;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch('http://localhost:3001/health', { signal: AbortSignal.timeout(1000) });
+      if (res.ok) return true;
+    } catch {}
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return false;
+}
+
+// ── Express app ────────────────────────────────────────────────────────────────
 const app = express();
-const PORT = process.env.PORT || 3010;
+app.use(cors({ origin: '*' }));
+app.use(express.json({ limit: '2mb' }));
 
-app.use(cors());
-app.use(express.json());
-
-// In-memory agent state (delegated to agent module)
-const logEmitter = new EventEmitter();
-
-// SSE log stream
+// ── SSE log stream ─────────────────────────────────────────────────────────────
 app.get('/api/logs', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  agent.logs.forEach(entry => res.write(`data: ${JSON.stringify(entry)}\n\n`));
-  const onLog = entry => res.write(`data: ${JSON.stringify(entry)}\n\n`);
-  logEmitter.on('log', onLog);
-  req.on('close', () => logEmitter.off('log', onLog));
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  // Send buffered logs
+  for (const entry of logBuffer) {
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  }
+
+  // Stream live logs
+  const handler = (entry) => {
+    try { res.write(`data: ${JSON.stringify(entry)}\n\n`); } catch {}
+  };
+  logBus.on('entry', handler);
+
+  // Heartbeat
+  const hb = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch { clearInterval(hb); }
+  }, 15000);
+
+  req.on('close', () => {
+    logBus.off('entry', handler);
+    clearInterval(hb);
+  });
 });
 
-// Chat endpoint
+// ── Chat endpoint ──────────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
-  const { message } = req.body;
-  if (!message) return res.status(400).json({ error: 'No message' });
+  const { message, focusIds, uiSpec } = req.body;
+  if (!message) return res.status(400).json({ error: 'Missing message' });
+  const agentId = `agent_${Date.now()}`;
+  logAgent({ type: 'user', message });
+
+  // Build enriched message with focus context if services were selected
+  let enriched = message;
+  if (Array.isArray(focusIds) && focusIds.length > 0) {
+    const { default: registry } = await import('./registry/service-registry.js');
+    const all = registry.getAllServices();
+    const focused = focusIds.map(id => all.find(s => s.id === id)).filter(Boolean);
+    if (focused.length) {
+      const ctx = focused.map(s => `id:${s.id} name:"${s.name}" type:${s.type} groupId:${s.groupId}`).join(', ');
+      enriched = `[Focus: ${ctx}]\n${enriched}`;
+    }
+  }
+
+  // Attach UI spec as a separate delimited block — task-interpret strips it before
+  // sending to the intent LLM so it never gets interpreted as services to build.
+  if (uiSpec && typeof uiSpec === 'object') {
+    enriched = `${enriched}\n[UI_SPEC]:${JSON.stringify(uiSpec)}`;
+  }
+
+  const { userBroker } = await import('./agent-graph.js');
+  userBroker.emit('request_received', enriched);
+  res.json({ ok: true, agentId });
+});
+
+// ── Services API ───────────────────────────────────────────────────────────────
+app.get('/api/services', async (_req, res) => {
+  const { default: registry } = await import('./registry/service-registry.js');
+  const services = registry.getAllServices().map(({ proc, code, _plan, ...rest }) => rest);
+  res.json(services);
+});
+
+app.delete('/api/services/:id', async (req, res) => {
+  const { default: registry } = await import('./registry/service-registry.js');
+  const { userBroker } = await import('./agent-graph.js');
+  const svc = registry.getService(req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+  userBroker.emit('delete_group', svc.groupId);
+  res.json({ ok: true });
+});
+
+app.post('/api/agent/cancel', async (_req, res) => {
+  const { cancelCurrentSession } = await import('./agent-graph.js');
+  cancelCurrentSession(); // emits done log internally
+  res.json({ ok: true });
+});
+
+app.post('/api/retry/:id', async (req, res) => {
+  const { default: registry } = await import('./registry/service-registry.js');
+  const { userBroker } = await import('./agent-graph.js');
+  const svc = registry.getService(req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+  svc._fixRetries = 0;
+  // Use retry_service (full regen+test pipeline) not run_tests (which short-circuits if no cached tests)
+  userBroker.emit('retry_service', svc.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/services/:id/stop', async (req, res) => {
+  const { default: registry } = await import('./registry/service-registry.js');
+  const { killService } = await import('./services/deployer.js');
+  const svc = registry.getService(req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+  killService(svc);
+  await registry.updateService(svc.id, { status: 'stopped' });
+  res.json({ ok: true });
+});
+
+app.post('/api/services/:id/start', async (req, res) => {
+  const { default: registry } = await import('./registry/service-registry.js');
+  const { spawnService } = await import('./services/deployer.js');
+  const svc = registry.getService(req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+  if (!svc.filePath) return res.status(400).json({ error: 'No file to start' });
+  const proc = spawnService(svc);
+  svc.proc = proc;
+  await registry.updateService(svc.id, { status: 'running' });
+  res.json({ ok: true });
+});
+
+// ── Snapshots API ─────────────────────────────────────────────────────────────
+app.get('/api/snapshots', async (_req, res) => {
+  const { listSnapshots } = await import('./services/self-modifier.js');
+  res.json(listSnapshots());
+});
+
+app.post('/api/snapshots/:id/rollback', async (req, res) => {
+  const { rollbackToSnapshot } = await import('./services/self-modifier.js');
   try {
-    await agent.handleUserRequest(message);
+    await rollbackToSnapshot(req.params.id);
+    logAgent({ type: 'fix', message: `Rolled back to snapshot ${req.params.id} via API — restart server to apply` });
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(400).json({ error: e.message });
   }
 });
 
-// Services endpoints
-app.get('/api/services', (req, res) => {
-  res.json(agent.registry.all());
-});
-app.post('/api/services', (req, res) => {
-  const svc = req.body;
-  agent.registry.add(svc);
-  res.status(201).json(svc);
-});
-app.patch('/api/services/:id', (req, res) => {
-  agent.registry.update(req.params.id, req.body);
-  res.json(agent.registry.get(req.params.id) || {});
-});
-app.delete('/api/services/:id', (req, res) => {
-  agent.registry.remove(req.params.id);
-  res.json({ ok: true, id: req.params.id });
+// ── Feature suggestion (pre-build dialog) ─────────────────────────────────────
+app.post('/api/suggest-features', async (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.json({ isNew: false });
+  try {
+    const { suggestFeatures } = await import('./services/llm-intent.js');
+    res.json(await suggestFeatures(message));
+  } catch {
+    res.json({ isNew: false });
+  }
 });
 
-// Plans endpoints
-app.get('/api/plans', (req, res) => {
-  res.json(agent.plans);
-});
-app.post('/api/plans', (req, res) => {
-  const plan = req.body;
-  agent.plans.push(plan);
-  res.status(201).json(plan);
+// ── Plans API ──────────────────────────────────────────────────────────────────
+app.get('/api/plans', async (_req, res) => {
+  const { dbFetch } = await import('./registry/cadenza-db-client.js');
+  try {
+    const plans = await dbFetch('/plans');
+    res.json(plans);
+  } catch {
+    res.json([]);
+  }
 });
 
-// Graph endpoint
-app.get('/api/graph', (req, res) => {
-  // Populate with mock data based on current plans/services
-  const nodes = [];
-  const edges = [];
-  agent.plans.forEach(plan => {
-    nodes.push({ id: plan.groupId, label: plan.description, type: 'plan' });
-    plan.services.forEach(svc => {
-      nodes.push({ id: svc.id, label: svc.name, type: svc.type });
-      edges.push({ from: plan.groupId, to: svc.id });
-    });
+// ── Graph (task map) API ───────────────────────────────────────────────────────
+app.get('/api/graph', async (_req, res) => {
+  const { default: cadenza } = await import('./cadenza-core.js');
+  res.json(cadenza.registry.export());
+});
+
+// ── Model stats API ────────────────────────────────────────────────────────────
+app.get('/api/model-stats', async (_req, res) => {
+  const { getAllStats } = await import('./registry/model-stats.js');
+  res.json(getAllStats());
+});
+
+// ── CadenzaDB proxy (for TabCadenzaDB) ───────────────────────────────────────
+app.get('/api/db/health', async (_req, res) => {
+  const fetch = (await import('node-fetch')).default;
+  try {
+    const r = await fetch('http://localhost:3001/health');
+    res.json(await r.json());
+  } catch {
+    res.status(503).json({ error: 'CadenzaDB unavailable' });
+  }
+});
+
+// ── Startup ────────────────────────────────────────────────────────────────────
+async function start() {
+  console.log('[Cadenza] Starting CadenzaDB...');
+  await startCadenzaDB();
+  const dbReady = await waitForDB();
+  if (!dbReady) {
+    console.warn('[Cadenza] CadenzaDB not available — continuing without persistence');
+  } else {
+    console.log('[Cadenza] CadenzaDB ready');
+    // Rehydrate registry from DB (marks all as stopped — no auto-respawn)
+    const { rehydrateRegistry } = await import('./registry/cadenza-db-client.js');
+    const { default: registry } = await import('./registry/service-registry.js');
+    await rehydrateRegistry(registry);
+  }
+
+  // Clean up deployed files from previous crashed runs
+  try {
+    const { readdirSync, unlinkSync } = await import('fs');
+    const deployedDir = path.join(__dirname, '..', 'deployed');
+    const files = readdirSync(deployedDir).filter(f => f.endsWith('.cjs') || f.endsWith('.html'));
+    files.forEach(f => { try { unlinkSync(path.join(deployedDir, f)); } catch {} });
+    if (files.length) console.log(`[Cadenza] Cleaned ${files.length} stale deployed files`);
+  } catch {}
+
+  // Load agent graph (registers all tasks)
+  await import('./agent-graph.js');
+  console.log('[Cadenza] Agent graph loaded');
+
+  const server = createServer(app);
+  server.listen(PORT, () => {
+    logAgent({ type: 'info', message: `Cadenza Agent backend running on port ${PORT}` });
+    console.log(`[Cadenza] Backend listening on http://localhost:${PORT}`);
   });
-  res.json({ nodes, edges });
-});
-
-// Model stats endpoint
-app.get('/api/model-stats', (req, res) => {
-  // Return mock stats
-  res.json([
-    { model: 'gpt-oss-120b', frontend: { score: 0.9, successes: 10, failures: 1, avgMs: 120 }, backend: { score: 0.8, successes: 8, failures: 2, avgMs: 150 }, db: { score: 0.85, successes: 9, failures: 1, avgMs: 100 }, test: { score: 0.95, successes: 12, failures: 0, avgMs: 80 }, fix: { score: 0.7, successes: 3, failures: 1, avgMs: 200 }, plan: { score: 0.92, successes: 11, failures: 1, avgMs: 110 } }
-  ]);
-});
-
-// Retry endpoint
-app.post('/api/retry/:serviceId', (req, res) => {
-  const { serviceId } = req.params;
-  const svc = agent.registry.get(serviceId);
-  if (!svc) return res.status(404).json({ error: 'Service not found' });
-  svc.status = 'running';
-  svc.retries = (svc.retries || 0) + 1;
-  const retryLog = { ts: Date.now(), type: 'fix', message: `Manual retry for ${svc.name}` };
-  agent.logs.push(retryLog);
-  logEmitter.emit('log', retryLog);
-  simulateServiceLifecycle(svc);
-  res.json({ ok: true, serviceId });
-});
-
-// CadenzaDB health endpoint
-app.get('/api/db/health', (req, res) => {
-  res.json({ status: 'ok', services: agent.registry.all().length, plans: agent.plans.length, logs: agent.logs.length, ts: Date.now() });
-});
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`Cadenza-Agent backend running on http://localhost:${PORT}`);
-});
-
-// Enhance service deployment simulation
-function simulateServiceLifecycle(serviceObj) {
-  // Simulate test run after deployment
-  setTimeout(() => {
-    const pass = Math.random() > 0.2;
-    serviceObj.status = pass ? 'verified' : 'degraded';
-    serviceObj.testResults = {
-      passed: pass ? ['health', 'basic'] : ['health'],
-      failed: pass ? [] : ['basic'],
-      total: 2
-    };
-    const testLog = { ts: Date.now(), type: 'test', message: `Test ${pass ? 'passed' : 'failed'} for ${serviceObj.name}` };
-    logs.push(testLog);
-    logEmitter.emit('log', testLog);
-    if (!pass) {
-      const fixLog = { ts: Date.now(), type: 'fix', message: `Auto-fix attempted for ${serviceObj.name}` };
-      logs.push(fixLog);
-      logEmitter.emit('log', fixLog);
-      // Simulate fix
-      setTimeout(() => {
-        serviceObj.status = 'verified';
-        serviceObj.retries += 1;
-        const fixPassLog = { ts: Date.now(), type: 'fix', message: `Auto-fix succeeded for ${serviceObj.name}` };
-        logs.push(fixPassLog);
-        logEmitter.emit('log', fixPassLog);
-      }, 1000);
-    }
-  }, 1200);
 }
+
+start().catch(e => {
+  console.error('[Cadenza] Fatal startup error:', e);
+  process.exit(1);
+});

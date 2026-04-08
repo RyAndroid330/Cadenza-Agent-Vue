@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html data-theme="light">
+<head><meta charset="utf-8"><title>Address Book</title></head>
+<body>
+<script>
+const API = 'http://localhost:4103';  // use for ALL fetch() calls — never call db services directly
+const COLUMNS = [
+  {key:'id', label:'ID'},
+  {key:'name', label:'Name'},
+  {key:'phone', label:'Phone'},
+  {key:'email', label:'Email'},
+  {key:'address', label:'Address'},
+  {key:'birthday', label:'Birthday'}
+];
+const FIELDS  = [
+  {key:'id', label:'ID', type:'hidden', required:false},
+  {key:'name', label:'Name', type:'text', required:true},
+  {key:'phone', label:'Phone', type:'text', required:true},
+  {key:'email', label:'Email', type:'email', required:true},
+  {key:'address', label:'Address', type:'text', required:true},
+  {key:'birthday', label:'Birthday', type:'date', required:true}
+];
+let _editId = null;
+async function load(q='') { 
+  const r=await fetch(API+'/contacts'+(q?'?q='+encodeURIComponent(q):'')); 
+  CadenzaUI.renderList('#_content',{data:await r.json(),columns:COLUMNS,onEdit:showForm,onDelete:remove}); 
+}
+async function remove(item) { 
+  await fetch(API+'/contacts/'+item.id,{method:'DELETE'}); 
+  load(); 
+  CadenzaUI.showToast('Deleted'); 
+}
+function showForm(item=null) { 
+  _editId=item?.id||null; 
+  CadenzaUI.renderForm({title:item?'Edit':'Add',fields:FIELDS,values:item||{},onSubmit:save}); 
+}
+async function save(data) { 
+  try { 
+    const url=API+'/contacts'+(_editId?'/'+_editId:''); 
+    await fetch(url,{method:_editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); 
+    CadenzaUI.hideForm(); 
+    load(); 
+    CadenzaUI.showToast('Saved!'); 
+  } catch(e){CadenzaUI.showToast(e.message,'error');}
+}
+document.addEventListener('DOMContentLoaded',()=>{ 
+  CadenzaUI.init('Address Book'); 
+  CadenzaUI.addToolbarButton('Add Record',()=>showForm(),{primary:true}); 
+  CadenzaUI.renderSearch('#_toolbar',{placeholder:'Search...',onSearch:load}); 
+  load(); 
+});
+</script>
+<script>(function(w){'use strict';
+const css="*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n\n/* ── macOS Light theme (default) ─────────────────────────────────────────── */\n:root {\n  --bg:        #f2f2f7;\n  --surface:   #ffffff;\n  --surface2:  #f9f9fb;\n  --border:    rgba(0,0,0,0.10);\n  --border-strong: rgba(0,0,0,0.18);\n  --text:      #1c1c1e;\n  --text2:     #3a3a3c;\n  --muted:     #8e8e93;\n  --accent:    #0071e3;\n  --accent-hover: #0077ed;\n  --red:       #ff3b30;\n  --green:     #34c759;\n  --amber:     #ff9f0a;\n  --blue:      #007aff;\n  --purple:    #af52de;\n  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);\n  --shadow:    0 4px 16px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);\n  --shadow-lg: 0 12px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08);\n  --radius:    8px;\n  --radius-lg: 12px;\n  --font:      -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;\n  --font-display: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;\n  --transition: .18s ease;\n}\n\n/* ── macOS Dark theme ─────────────────────────────────────────────────────── */\n[data-theme=\"dark\"] {\n  --bg:        #1c1c1e;\n  --surface:   #2c2c2e;\n  --surface2:  #3a3a3c;\n  --border:    rgba(255,255,255,0.10);\n  --border-strong: rgba(255,255,255,0.18);\n  --text:      #f2f2f7;\n  --text2:     #ebebf0;\n  --muted:     #8e8e93;\n  --accent:    #0a84ff;\n  --accent-hover: #409cff;\n  --red:       #ff453a;\n  --green:     #30d158;\n  --amber:     #ffd60a;\n  --blue:      #0a84ff;\n  --purple:    #bf5af2;\n  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);\n  --shadow:    0 4px 16px rgba(0,0,0,0.4);\n  --shadow-lg: 0 12px 40px rgba(0,0,0,0.55);\n}\n\n/* ── Base ─────────────────────────────────────────────────────────────────── */\nbody { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }\n\n/* ── Titlebar ─────────────────────────────────────────────────────────────── */\n.mac-titlebar { height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0; position: sticky; top: 0; z-index: 10; }\n.mac-traffic { display: flex; gap: 7px; flex-shrink: 0; }\n.mac-dot { width: 12px; height: 12px; border-radius: 50%; opacity: 0.85; }\n.mac-dot-red { background: var(--red); }\n.mac-dot-amber { background: var(--amber); }\n.mac-dot-green { background: var(--green); }\n.mac-title { flex: 1; font-size: 14px; font-weight: 600; color: var(--text); text-align: center; letter-spacing: -0.2px; }\n.mac-titlebar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }\n\n/* ── Layout ───────────────────────────────────────────────────────────────── */\n.mac-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }\n\n/* ── Sidebar ──────────────────────────────────────────────────────────────── */\n.mac-sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; padding: 10px 0; }\n.mac-sidebar-section { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 14px 16px 4px; }\n.mac-sidebar-item { display: flex; align-items: center; gap: 9px; padding: 7px 16px; color: var(--text2); font-size: 13px; font-weight: 500; cursor: pointer; border: none; background: none; width: 100%; text-align: left; text-decoration: none; transition: background var(--transition), color var(--transition); }\n.mac-sidebar-item:hover { background: var(--surface2); color: var(--text); }\n.mac-sidebar-item.active { background: var(--accent); color: #fff; border-radius: 7px; margin: 0 8px; width: calc(100% - 16px); padding: 7px 10px; }\n.mac-sidebar-divider { border: none; border-top: 1px solid var(--border); margin: 6px 16px; }\n\n/* ── Main ─────────────────────────────────────────────────────────────────── */\n.mac-main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--bg); }\n.mac-toolbar { padding: 12px 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }\n.mac-toolbar-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; flex: 1; }\n.mac-content { flex: 1; padding: 20px; overflow-y: auto; }\n.mac-content::-webkit-scrollbar { width: 6px; }\n.mac-content::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }\n\n/* ── Buttons ──────────────────────────────────────────────────────────────── */\n.mac-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; transition: background var(--transition), box-shadow var(--transition); white-space: nowrap; box-shadow: var(--shadow-sm); }\n.mac-btn:hover:not(:disabled) { background: var(--surface2); box-shadow: var(--shadow); }\n.mac-btn:active:not(:disabled) { transform: scale(0.98); }\n.mac-btn:disabled { opacity: .4; cursor: default; }\n.mac-btn-primary { background: var(--accent); border-color: transparent; color: #fff; box-shadow: 0 1px 3px rgba(0,113,227,0.3); }\n.mac-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }\n.mac-btn-danger { border-color: var(--red); color: var(--red); }\n.mac-btn-danger:hover:not(:disabled) { background: rgba(255,59,48,.08); }\n.mac-btn-sm { padding: 4px 10px; font-size: 12px; }\n\n/* ── Inputs ───────────────────────────────────────────────────────────────── */\n.mac-input-group { display: flex; flex-direction: column; gap: 5px; }\n.mac-label { font-size: 12px; font-weight: 600; color: var(--muted); }\n.mac-input { padding: 8px 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); font-size: 14px; font-family: var(--font); outline: none; transition: border-color var(--transition), box-shadow var(--transition); width: 100%; }\n.mac-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,227,0.18); }\n.mac-input::placeholder { color: var(--muted); }\ntextarea.mac-input { resize: vertical; min-height: 80px; }\n\n/* ── Cards ────────────────────────────────────────────────────────────────── */\n.mac-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }\n.mac-card-header { padding: 13px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 10px; }\n.mac-card-body { padding: 16px; }\n.mac-card-footer { padding: 11px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; background: var(--surface2); }\n\n/* ── List ─────────────────────────────────────────────────────────────────── */\n.mac-list { display: flex; flex-direction: column; }\n.mac-list-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); transition: background var(--transition); }\n.mac-list-item:last-child { border-bottom: none; }\n.mac-list-item:hover { background: var(--surface2); }\n.mac-list-item-title { font-weight: 500; font-size: 14px; color: var(--text); }\n.mac-list-item-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }\n.mac-list-item-meta { margin-left: auto; font-size: 12px; color: var(--muted); flex-shrink: 0; }\n\n/* ── Table ────────────────────────────────────────────────────────────────── */\n.mac-table { width: 100%; border-collapse: collapse; font-size: 13px; }\n.mac-table th { padding: 9px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--surface2); }\n.mac-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text); }\n.mac-table tr:last-child td { border-bottom: none; }\n.mac-table tbody tr:hover td { background: var(--surface2); }\n\n/* ── Badges ───────────────────────────────────────────────────────────────── */\n.mac-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }\n.mac-badge-blue { background: rgba(0,122,255,.12); color: var(--blue); }\n.mac-badge-green { background: rgba(52,199,89,.12); color: var(--green); }\n.mac-badge-red { background: rgba(255,59,48,.12); color: var(--red); }\n.mac-badge-amber { background: rgba(255,159,10,.12); color: var(--amber); }\n\n/* ── Modal ────────────────────────────────────────────────────────────────── */\n.mac-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }\n.mac-modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 100%; max-width: 520px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: mac-in .18s ease; }\n@keyframes mac-in { from { opacity:0; transform:scale(.97) translateY(4px); } to { opacity:1; transform:none; } }\n.mac-modal-header { padding: 15px 18px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }\n.mac-modal-body { padding: 18px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }\n.mac-modal-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; background: var(--surface2); flex-shrink: 0; }\n\n/* ── Empty / Spinner / Toast ──────────────────────────────────────────────── */\n.mac-empty { text-align: center; padding: 52px 24px; }\n.mac-empty-icon { font-size: 40px; display: block; margin-bottom: 12px; opacity: 0.4; }\n.mac-empty-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 4px; }\n.mac-empty-sub { font-size: 13px; color: var(--muted); }\n.mac-spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: 40px auto; }\n@keyframes spin { to { transform: rotate(360deg); } }\n.mac-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(12px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 9px 18px; border-radius: 20px; box-shadow: var(--shadow); z-index: 200; font-size: 13px; font-weight: 500; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }\n.mac-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }\n\n/* ── Theme toggle ─────────────────────────────────────────────────────────── */\n.mac-theme-btn { width: 32px; height: 20px; border-radius: 10px; background: var(--muted); border: none; cursor: pointer; position: relative; transition: background var(--transition); flex-shrink: 0; }\n[data-theme=\"dark\"] .mac-theme-btn { background: var(--accent); }\n.mac-theme-btn::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--transition); }\n[data-theme=\"dark\"] .mac-theme-btn::after { transform: translateX(12px); }\n\n/* ── Utilities ────────────────────────────────────────────────────────────── */\n.mac-divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }\n.mac-flex { display: flex; align-items: center; gap: 8px; }\n.mac-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n.mac-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }\n.mac-text-muted { color: var(--muted); }\n.mac-text-accent { color: var(--accent); }\n.mac-text-danger { color: var(--red); }\n.mac-mt-8 { margin-top: 8px; }\n.mac-mt-16 { margin-top: 16px; }\n@media (max-width: 700px) {\n  .mac-sidebar { display: none; }\n  .mac-grid-2 { grid-template-columns: 1fr; }\n  .mac-content { padding: 14px; }\n}";
+const $=(s,c=document)=>c.querySelector(s);
+function mk(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+let _content=null,_overlay=null,_toastEl=null,_toastTimer=null;
+const UI=w.CadenzaUI={
+  init(title='App'){
+    const s=mk('style');s.textContent=css;document.head.appendChild(s);
+    document.body.style.margin='0';
+    const tb=mk('div','mac-titlebar');
+    tb.innerHTML='<div class="mac-title" id="_title"></div><div class="mac-titlebar-actions"><button class="mac-theme-btn" id="_theme-btn"></button></div>';
+    tb.querySelector('#_title').textContent=title;
+    tb.querySelector('#_theme-btn').addEventListener('click',()=>UI.toggleTheme());
+    const layout=mk('div','mac-layout');
+    const sidebar=mk('nav','mac-sidebar');sidebar.id='_sidebar';
+    const main=mk('div','mac-main');
+    const toolbar=mk('div','mac-toolbar');toolbar.id='_toolbar';
+    _content=mk('div','mac-content');_content.id='_content';
+    main.appendChild(toolbar);main.appendChild(_content);
+    layout.appendChild(sidebar);layout.appendChild(main);
+    document.body.appendChild(tb);document.body.appendChild(layout);
+    _overlay=mk('div','mac-overlay');_overlay.style.display='none';_overlay.id='_overlay';
+    const modal=mk('div','mac-modal');modal.id='_modal';
+    _overlay.appendChild(modal);
+    _overlay.addEventListener('click',e=>{if(e.target===_overlay)UI.hideForm();});
+    document.body.appendChild(_overlay);
+    _toastEl=mk('div','mac-toast');document.body.appendChild(_toastEl);
+    return UI;
+  },
+  setNav(items,onSelect){
+    const sb=$('#_sidebar');if(!sb)return;sb.innerHTML='';
+    items.forEach((item,i)=>{
+      const btn=mk('button','mac-sidebar-item'+(i===0?' active':''));
+      btn.textContent=(item.icon||'')+' '+item.label;
+      btn.addEventListener('click',()=>{
+        [...sb.querySelectorAll('.mac-sidebar-item')].forEach(x=>x.classList.remove('active'));
+        btn.classList.add('active');onSelect(item,i);
+      });
+      sb.appendChild(btn);
+    });
+  },
+  addToolbarButton(label,onClick,opts={}){
+    const tb=$('#_toolbar');if(!tb)return;
+    const btn=mk('button','mac-btn'+(opts.primary?' mac-btn-primary':'')+(opts.danger?' mac-btn-danger':''));
+    btn.textContent=label;btn.addEventListener('click',onClick);tb.appendChild(btn);return btn;
+  },
+  setToolbarTitle(title){
+    const tb=$('#_toolbar');if(!tb)return;
+    let t=$('#_toolbar-title');
+    if(!t){t=mk('span','mac-toolbar-title');t.id='_toolbar-title';tb.prepend(t);}
+    t.textContent=title;
+  },
+  renderSearch(container,opts={}){
+    const target=typeof container==='string'?($(container)||$('#_toolbar')):container;
+    if(!target)return;
+    const{placeholder='Search...',onSearch}=opts;
+    const wrap=mk('div','mac-flex');wrap.style.flex='1';
+    const inp=mk('input','mac-input');
+    inp.type='text';inp.placeholder=placeholder;inp.style.cssText='max-width:280px;flex:1;';
+    let db;inp.addEventListener('input',()=>{clearTimeout(db);db=setTimeout(()=>onSearch&&onSearch(inp.value),280);});
+    wrap.appendChild(inp);target.appendChild(wrap);return inp;
+  },
+  renderList(container,opts={}){
+    const target=typeof container==='string'?($(container)||_content):container||_content;
+    if(!target)return;
+    const{data=[],columns=[],onEdit,onDelete}=opts;
+    target.innerHTML='';
+    if(!data.length){
+      target.appendChild(mk('div','mac-empty','<span class="mac-empty-icon">📭</span><div class="mac-empty-title">No records yet</div><div class="mac-empty-sub">Use the Add button to create one</div>'));
+      return;
+    }
+    const wrap=mk('div','mac-card');
+    const table=mk('table','mac-table');
+    const thead=mk('thead');const hr=mk('tr');
+    columns.forEach(c=>{const th=mk('th');th.textContent=c.label||c.key;hr.appendChild(th);});
+    const ath=mk('th');ath.textContent='Actions';hr.appendChild(ath);
+    thead.appendChild(hr);table.appendChild(thead);
+    const tbody=mk('tbody');
+    data.forEach(item=>{
+      const tr=mk('tr');
+      columns.forEach(c=>{const td=mk('td');td.textContent=item[c.key]??'';tr.appendChild(td);});
+      const atd=mk('td');atd.style.whiteSpace='nowrap';
+      if(onEdit){const eb=mk('button','mac-btn mac-btn-sm','Edit');eb.addEventListener('click',()=>onEdit(item));atd.appendChild(eb);}
+      if(onDelete){const db=mk('button','mac-btn mac-btn-danger mac-btn-sm','Delete');db.style.marginLeft='6px';db.addEventListener('click',()=>{if(confirm('Delete this record?'))onDelete(item);});atd.appendChild(db);}
+      tr.appendChild(atd);tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);wrap.appendChild(table);target.appendChild(wrap);
+  },
+  renderForm(opts={}){
+    const{title='Form',fields=[],values={},onSubmit,onCancel}=opts;
+    const modal=$('#_modal');if(!modal)return;
+    let html='<div class="mac-modal-header"><span>'+title+'</span></div><div class="mac-modal-body">';
+    fields.forEach(f=>{
+      const t=f.type||'text';
+      const v=(values[f.key]!=null?String(values[f.key]):'').replace(/"/g,'&quot;');
+      html+='<div class="mac-input-group"><label class="mac-label" for="mf-'+f.key+'">'+(f.label||f.key)+(f.required?' *':'')+'</label>';
+      if(t==='textarea')html+='<textarea class="mac-input" id="mf-'+f.key+'" name="'+f.key+'" rows="3" placeholder="'+(f.placeholder||'')+'">'+v+'</textarea>';
+      else html+='<input class="mac-input" id="mf-'+f.key+'" name="'+f.key+'" type="'+t+'" value="'+v+'" placeholder="'+(f.placeholder||'')+(f.required?'" required':'"')+'>';
+      html+='</div>';
+    });
+    html+='</div><div class="mac-modal-footer"><button class="mac-btn" id="_mf-cancel">Cancel</button><button class="mac-btn mac-btn-primary" id="_mf-submit">Save</button></div>';
+    modal.innerHTML=html;
+    _overlay.style.display='flex';
+    $('#_mf-cancel',modal).addEventListener('click',()=>{UI.hideForm();if(onCancel)onCancel();});
+    $('#_mf-submit',modal).addEventListener('click',()=>{
+      const data={};
+      fields.forEach(f=>{const el=document.getElementById('mf-'+f.key);if(el)data[f.key]=el.value;});
+      if(onSubmit)onSubmit(data);
+    });
+    setTimeout(()=>{const fi=modal.querySelector('input,textarea,select');if(fi)fi.focus();},50);
+  },
+  hideForm(){
+    if(_overlay)_overlay.style.display='none';
+    const m=$('#_modal');if(m)m.innerHTML='';
+  },
+  showToast(msg,type='success'){
+    if(!_toastEl)return;
+    _toastEl.textContent=msg;
+    _toastEl.className='mac-toast show';
+    _toastEl.style.cssText=type==='error'?'background:rgba(255,59,48,.12);color:var(--red);':'';
+    clearTimeout(_toastTimer);
+    _toastTimer=setTimeout(()=>_toastEl.classList.remove('show'),3000);
+  },
+  toggleTheme(){const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark';},
+  getContent(){return _content||$('#_content');},
+  getToolbar(){return $('#_toolbar');}
+};
+})(window);</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+'use strict';
+const http = require('http');
+const PORT = process.env.PORT || 4103;
+
+// ── Micro-router (written by Cadenza, not LLM) ────────────────────────────────
+const _routes = [];
+const router = {
+  get:    (p, fn) => _routes.push({ method: 'GET',    pattern: p, fn }),
+  post:   (p, fn) => _routes.push({ method: 'POST',   pattern: p, fn }),
+  put:    (p, fn) => _routes.push({ method: 'PUT',    pattern: p, fn }),
+  delete: (p, fn) => _routes.push({ method: 'DELETE', pattern: p, fn }),
+  patch:  (p, fn) => _routes.push({ method: 'PATCH',  pattern: p, fn }),
+};
+function _match(method, pathname) {
+  for (const r of _routes) {
+    if (r.method !== method && !(method === 'HEAD' && r.method === 'GET')) continue;
+    const keys = [];
+    const re = new RegExp('^' + r.pattern.replace(/:([^/]+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '\/?$');
+    const m = pathname.match(re);
+    if (m) return { fn: r.fn, params: Object.fromEntries(keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
+  }
+  return null;
+}
+
+// Built-in health route (always available)
+router.get('/health', () => ({ ok: true }));
+router.get('/schema', () => ({ routes: _routes.map(r => ({ method: r.method, path: r.pattern })) }));
+
+// ── LLM-generated data and routes ────────────────────────────────────────────
+const DB = 'http://localhost:4101';
+
+router.get('/contacts', async () => {
+  const r = await fetch(DB + '/contacts');
+  return r.ok ? await r.json() : [r.status, await r.json()];
+});
+
+router.post('/contacts', async (_, body) => {
+  const { name, phone, email, address, birthday } = body;
+  if (typeof name !== 'string' || !name.trim()) return [400, { error: 'Invalid contact data' }];
+  if (typeof phone !== 'string' || !phone.trim()) return [400, { error: 'Invalid contact data' }];
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return [400, { error: 'Invalid contact data' }];
+  const payload = { name, phone, email, address, birthday };
+  const r = await fetch(DB + '/contacts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await r.json();
+  return r.ok ? [201, data] : [r.status, data];
+});
+
+router.get('/contacts/:id', async (params) => {
+  const r = await fetch(DB + '/contacts/' + params.id);
+  if (r.status === 404) return [404, { error: 'not found' }];
+  return r.ok ? await r.json() : [r.status, await r.json()];
+});
+
+router.put('/contacts/:id', async (params, body) => {
+  const { name, phone, email, address, birthday } = body;
+  if (typeof name !== 'string' || !name.trim()) return [400, { error: 'Invalid contact data' }];
+  if (typeof phone !== 'string' || !phone.trim()) return [400, { error: 'Invalid contact data' }];
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return [400, { error: 'Invalid contact data' }];
+  const payload = { name, phone, email, address, birthday };
+  const r = await fetch(DB + '/contacts/' + params.id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (r.status === 404) return [404, { error: 'not found' }];
+  const data = await r.json();
+  return r.ok ? data : [r.status, data];
+});
+
+router.delete('/contacts/:id', async (params) => {
+  const r = await fetch(DB + '/contacts/' + params.id, { method: 'DELETE' });
+  if (r.status === 404) return [404, { error: 'not found' }];
+  return r.ok ? [204, null] : [r.status, await r.json()];
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+
+  const [pathname, qs = ''] = req.url.split('?');
+  const query = Object.fromEntries(new URLSearchParams(qs));
+  let raw = '';
+  req.on('data', d => { raw += d; });
+  req.on('end', async () => {
+    let body = {};
+    try { if (raw) body = JSON.parse(raw); } catch {}
+    res.setHeader('Content-Type', 'application/json');
+    const match = _match(req.method, pathname);
+    if (!match) { res.writeHead(404); return res.end(JSON.stringify({ error: 'Not found' })); }
+    try {
+      const result = await match.fn(match.params, body, query);
+      // Distinguish [statusCode, data] tuples from plain array return values
+      const isStatusTuple = Array.isArray(result) && result.length === 2 && typeof result[0] === 'number' && result[0] >= 100 && result[0] < 600;
+      const [status, data] = isStatusTuple ? result : [200, result];
+      res.writeHead(status);
+      res.end(JSON.stringify(data ?? null));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+}).listen(PORT, () => console.log('Server listening on port ' + PORT));

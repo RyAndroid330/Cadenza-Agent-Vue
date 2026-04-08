@@ -20,8 +20,16 @@
 </template>
 
 <script setup>
+import { ref, watch, nextTick } from 'vue';
 const props = defineProps(['logs', 'filter']);
 const filters = ['all','plan','code','deploy','test','fix','error'];
+const stream = ref(null);
+
+watch(() => props.logs, async () => {
+  await nextTick();
+  if (stream.value) stream.value.scrollTop = stream.value.scrollHeight;
+}, { deep: true });
+
 function fmt(ts) {
   const d = new Date(ts||Date.now());
   return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');

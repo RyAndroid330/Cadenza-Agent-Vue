@@ -2,6 +2,11 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
+  components: {
+    dirs: [
+      { path: '~/components', pathPrefix: false }
+    ]
+  },
   nitro: {
     devServer: {
       host: '0.0.0.0'
